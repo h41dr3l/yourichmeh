@@ -24,7 +24,7 @@ from telegram.ext import (
     InlineQueryHandler,
 )
 import re
-
+from currency_converter import CurrencyConverter
 
 def write_json(dictionary):
     json_object = json.dumps(dictionary, indent=4)
@@ -42,7 +42,9 @@ def get_date():
     year = datetime.now().year
     return day, month, year
 
-
+def convert_currency(price, country):
+    c = CurrencyConverter('https://www.ecb.europa.eu/stats/eurofxref/eurofxref.zip')
+    return round(float(c.convert(price, country.upper(), 'SGD')),2)
 
 
 def start(update: Update, context: CallbackContext):
@@ -60,10 +62,23 @@ def msg_handler(update: Update, context: CallbackContext):
             for item in dictionary[user][msg][f"{day}"]:
                 total += float(dictionary[user][msg][f"{day}"][item])
         update.message.reply_text(f"You spent ${str(total)} in the month of {msg}")
-        
+
+        days = []
+        amt = []
+        message= ''
+        for day in dictionary[user][msg]:
+            total = 0
+            days.append(int(day))
+            for item in dictionary[user][msg][day]:
+                total += float(dictionary[user][msg][day][item])
+            amt.append(total)
+            message += f'{str(day)}: ${str(total)}\n'
+    
+        message += f"\nYou spent an average of ${str(round(sum(amt)/len(amt),2))} per day"
+        update.message.reply_text(message)
 
     #input amount
-    pattern = "[a-zA-Z]+, ([+-]?(?=\.\d|\d)(?:\d+)?(?:\.?\d*))"
+    pattern = "^[a-zA-Z]+, ([+-]?(?=\.\d|\d)(?:\d+)?(?:\.?\d*))$"
     if re.search(pattern, msg) != None:
         dictionary = read_json()
         item_amt = msg.split(',')
@@ -84,6 +99,32 @@ def msg_handler(update: Update, context: CallbackContext):
             dictionary[user][f"{month}/{year}"][f"{day}"][item] = 0
             
         dictionary[user][f"{month}/{year}"][f"{day}"][item] = float(dictionary[user][f"{month}/{year}"][f"{day}"][item]) + float(price)
+        write_json(dictionary)
+        update.message.reply_text("Updated Successfully!")
+
+    pattern = "^[a-zA-Z]+, ([+-]?(?=\.\d|\d)(?:\d+)?(?:\.?\d*)) ?[a-zA-Z]{3}$"
+    if re.search(pattern, msg) != None:
+        dictionary = read_json()
+        item_amt = msg.split(',')
+        item = item_amt[0]
+        price = item_amt[1][0:-3]
+        curr = item_amt[1][-3:]
+        price = convert_currency(float(price), curr)
+        day, month, year = get_date()
+
+        if str(user) not in dictionary:
+            dictionary[user] = {}
+        
+        if f"{month}/{year}" not in dictionary[user]:
+            dictionary[user][f"{month}/{year}"] = {}
+            
+        if f"{day}" not in dictionary[user][f"{month}/{year}"]:
+            dictionary[user][f"{month}/{year}"][f"{day}"] = {}
+            
+        if item not in dictionary[user][f"{month}/{year}"][f"{day}"]:
+            dictionary[user][f"{month}/{year}"][f"{day}"][item] = 0
+            
+        dictionary[user][f"{month}/{year}"][f"{day}"][item] = float(dictionary[user][f"{month}/{year}"][f"{day}"][item]) + price
         write_json(dictionary)
         update.message.reply_text("Updated Successfully!")
 
